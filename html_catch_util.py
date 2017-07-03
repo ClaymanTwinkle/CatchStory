@@ -5,8 +5,14 @@ import urllib2
 
 ### 解析url为html字符串
 def getHtml(url):
-    page = urllib2.urlopen(url)
-    html = page.read()
+    opener = urllib2.build_opener()
+    urllib2.install_opener(opener)
+    try:
+        page = urllib2.urlopen(url, timeout=20)
+        html = page.read()
+    except:
+        print u"超时了"
+        return getHtml(url)
     return html
 
 

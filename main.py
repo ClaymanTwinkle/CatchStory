@@ -1,23 +1,19 @@
 # -*- coding: utf-8 -*-
 import re
-import urllib2
 import uuid
+from lxml import etree
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from lxml import etree
-
 from html_catch_util import getHtml
 
 ### 配置代理(外网) ###
-
-proxy_info = {'host': 'dev-proxy.oa.com',
-              'port': 8080
-              }
-proxy_support = urllib2.ProxyHandler({"http": "http://%(host)s:%(port)d" % proxy_info})
-
-opener = urllib2.build_opener(proxy_support)
-urllib2.install_opener(opener)
+# proxy_info = {'host': 'dev-proxy.oa.com',
+#               'port': 8080
+#               }
+# proxy_support = urllib2.ProxyHandler({"http": "http://%(host)s:%(port)d" % proxy_info})
+#opener = urllib2.build_opener(proxy_support)
+#urllib2.install_opener(opener)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = "mysql://root:root@127.0.0.1/story?charset=utf8"
@@ -136,31 +132,51 @@ class Quanshuwang(object):
         print html_url
         html_tree = etree.HTML(html)
 
-        chapter_title_list = html_tree.xpath(u'//*[@class="clearfix dirconone"]/li/a/text()')
-        chapter_url_list = html_tree.xpath(u'//*[@class="clearfix dirconone"]/li/a/@href')
+        chapter_a_list = html_tree.xpath(u'//*[@class="clearfix dirconone"]/li/a')
+        #chapter_title_list = html_tree.xpath(u'//*[@class="clearfix dirconone"]/li/a/text()')
+        #chapter_url_list = html_tree.xpath(u'//*[@class="clearfix dirconone"]/li/a/@href')
 
-        for i in range(len(chapter_url_list)):
-            chapter_url_list[i] = html_url + u"/" + chapter_url_list[i]
+        # for i in range(len(chapter_url_list)):
+        #     chapter_url_list[i] = html_url + u"/" + chapter_url_list[i]
 
-        size = min(len(chapter_title_list), len(chapter_url_list))
+        size = len(chapter_a_list)
 
         for i in range(size):
-            if Chapter.query.filter_by(url=chapter_url_list[i]).first() is None:
-                chapter = Chapter()
-                chapter.id = uuid.uuid3(uuid.NAMESPACE_DNS, chapter_url_list[i].encode('utf-8')).__str__()
-                chapter.no = i
-                chapter.story_id = story_id
-                chapter.title = chapter_title_list[i]
-                chapter.url = chapter_url_list[i]
-                chapter.content = self.resolve_chapter_content_html(chapter_url_list[i])
-                db.session.add(chapter)
-                db.session.commit()
+            chapter_url = html_url + u"/" + chapter_a_list[i].xpath(u'./@href')[0]
+
+            if Chapter.query.filter_by(url=chapter_url).first() is None:
+                print u"解析 "+chapter_url
+                chapter_title_list = chapter_a_list[i].xpath(u'./text()')
+                if len(chapter_title_list) != 0:
+                    chapter_title = chapter_title_list[0]
+                else:
+                    chapter_title_list = chapter_a_list[i].xpath(u'./@title')
+                    if len(chapter_title_list) != 0:
+                        chapter_title = chapter_title_list[0]
+                    else:
+                        print u"解析失败 "+chapter_url
+                if chapter_title is not None:
+                    chapter = Chapter()
+                    chapter.id = uuid.uuid3(uuid.NAMESPACE_DNS, chapter_url.encode('utf-8')).__str__()
+                    chapter.no = i
+                    chapter.story_id = story_id
+                    chapter.title = chapter_title
+                    chapter.url = chapter_url
+                    chapter.content = self.resolve_chapter_content_html(chapter_url)
+                    print u"开始保存章节"+chapter_title
+                    db.session.add(chapter)
+                    db.session.commit()
+                    print u"结束保存章节"+chapter_title
+            else:
+                print u"忽略 "+chapter_url
 
     ### 解析章节内容，输出篇幅
     def resolve_chapter_content_html(self, html_url):
+        print u"开始解析文章内容 "+html_url
         html = getHtml(html_url)
         html_tree = etree.HTML(html)
         main_content = html_tree.xpath(u'//*[@id="content"]/text()')
+        print u"结束解析文章内容 "+html_url
         return u'\n'.join(main_content)
 
 
